@@ -138,13 +138,14 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
 
     // Optimized SQL: Only select essential columns, use pre-filter with LIKE
     // to reduce the number of rows before computing similarity scores
+    // NOTE: geometry column is already native GEOMETRY type - no ST_GeomFromWKB needed
     const sql = `
       SELECT 
         id,
         names.primary as name,
         categories.primary as category,
-        ST_X(ST_GeomFromWKB(geometry)) as longitude,
-        ST_Y(ST_GeomFromWKB(geometry)) as latitude,
+        ST_X(geometry) as longitude,
+        ST_Y(geometry) as latitude,
         GREATEST(
           COALESCE(jaro_winkler_similarity(lower(names.primary), '${keyword}'), 0),
           COALESCE(jaro_winkler_similarity(lower(categories.primary), '${keyword}'), 0)
