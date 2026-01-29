@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { POI } from "@/types/poi";
+import { POI, BBox } from "@/types/poi";
 
 // NOTE: We intentionally use plain Leaflet (not react-leaflet) to avoid the
 // React Context consumer crash: `render2 is not a function`.
@@ -35,22 +35,37 @@ interface POIMapProps {
   pois: POI[];
   onSelectPOI: (poi: POI) => void;
   selectedPOI: POI | null;
+  onBoundsChange?: (bbox: BBox) => void;
 }
 
-export function POIMap({ pois, onSelectPOI }: POIMapProps) {
+export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // Keep a stable tile URL/options so we don't re-init the map unnecessarily.
   const tileConfig = useMemo(
     () => ({
       url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       attribution:
-        "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>",
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }),
     [],
   );
+
+  // Handle bounds change for viewport-based queries
+  const handleBoundsChange = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !onBoundsChange) return;
+
+    const bounds = map.getBounds();
+    const bbox: BBox = {
+      north: bounds.getNorth(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      west: bounds.getWest(),
+    };
+    onBoundsChange(bbox);
+  }, [onBoundsChange]);
 
   // Create map once.
   useEffect(() => {
@@ -70,16 +85,34 @@ export function POIMap({ pois, onSelectPOI }: POIMapProps) {
 
     const markersLayer = L.layerGroup().addTo(map);
 
+    // Listen for zoom/pan changes (debounced)
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    map.on('moveend', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        if (onBoundsChange) {
+          const bounds = map.getBounds();
+          onBoundsChange({
+            north: bounds.getNorth(),
+            south: bounds.getSouth(),
+            east: bounds.getEast(),
+            west: bounds.getWest(),
+          });
+        }
+      }, 500);
+    });
+
     mapRef.current = map;
     markersLayerRef.current = markersLayer;
 
     return () => {
+      clearTimeout(debounceTimer);
       markersLayer.clearLayers();
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
     };
-  }, [tileConfig]);
+  }, [tileConfig, onBoundsChange]);
 
   // Render markers whenever POIs change.
   useEffect(() => {
@@ -134,8 +167,12 @@ export function POIMap({ pois, onSelectPOI }: POIMapProps) {
       marker.addTo(markersLayer);
     }
 
-    const bounds = L.latLngBounds(pois.map((p) => [p.latitude, p.longitude] as [number, number]));
-    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+    // Only fit bounds on initial load (when there's no prior view)
+    const currentZoom = map.getZoom();
+    if (currentZoom <= 2) {
+      const bounds = L.latLngBounds(pois.map((p) => [p.latitude, p.longitude] as [number, number]));
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+    }
   }, [pois, onSelectPOI]);
 
   return (
@@ -146,11 +183,10 @@ export function POIMap({ pois, onSelectPOI }: POIMapProps) {
 }
 
 function escapeHtml(input: string) {
-  // Avoid String.prototype.replaceAll for older TS lib targets.
   return input
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
