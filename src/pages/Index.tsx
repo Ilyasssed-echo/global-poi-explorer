@@ -4,7 +4,7 @@ import { POIMap } from '@/components/POIMap';
 import { ResultsTable } from '@/components/ResultsTable';
 import { StatsBar } from '@/components/StatsBar';
 import { LogsPanel } from '@/components/LogsPanel';
-import { POI, SearchParams, BBox } from '@/types/poi';
+import { POI, SearchParams } from '@/types/poi';
 import { searchPOIs } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
@@ -68,45 +68,7 @@ const Index = () => {
     }
   }, []);
 
-  // Handle map viewport changes - reload POIs for new bounds
-  const handleBoundsChange = useCallback(async (bbox: BBox) => {
-    const params = lastSearchParams.current;
-    if (!params || isLoading) return;
-
-    // Only do viewport-based requery if we've already searched
-    if (pois.length === 0) return;
-    
-    // Skip the first bounds change after initial search (prevents loop)
-    if (isInitialSearchRef.current) {
-      isInitialSearchRef.current = false;
-      return;
-    }
-
-    setIsLoading(true);
-    const startTime = Date.now();
-
-    try {
-      const response = await searchPOIs({
-        ...params,
-        bbox,
-        limit: MAX_POIS_DISPLAYED,
-      });
-
-      const endTime = Date.now();
-      setSearchTime(endTime - startTime);
-      // Only update POIs if we got results (prevents flickering)
-      if (response.pois.length > 0) {
-        setPois(response.pois);
-        setTotalFilteredCount(response.filtered_count);
-      }
-      setLogs(response.logs);
-      // Don't update resultBbox on viewport queries to keep original search area visible
-    } catch (error) {
-      console.error('Viewport query failed:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [pois.length, isLoading]);
+  // Removed: handleBoundsChange - map no longer auto-reloads on pan/zoom
 
   const handleExportCSV = useCallback(() => {
     if (pois.length === 0) return;
@@ -153,7 +115,6 @@ const Index = () => {
                 pois={pois}
                 selectedPOI={selectedPOI}
                 onSelectPOI={setSelectedPOI}
-                onBoundsChange={handleBoundsChange}
                 resultBbox={resultBbox}
               />
             </div>

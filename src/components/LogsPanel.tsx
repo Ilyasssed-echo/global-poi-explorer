@@ -52,7 +52,7 @@ export function LogsPanel({ logs, onClearLogs }: LogsPanelProps) {
       {isExpanded && (
         <div 
           ref={scrollRef}
-          className="max-h-[300px] overflow-y-auto px-4 py-3"
+          className="h-[400px] overflow-y-auto px-4 py-3"
         >
           <div className="font-mono text-xs space-y-1">
             {logs.map((log, index) => (
