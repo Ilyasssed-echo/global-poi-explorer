@@ -1,7 +1,6 @@
 import { SearchParams, SearchResponse, POI } from '@/types/poi';
 
-// TODO: Replace with your deployed backend URL after deploying to Railway/Render
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+const API_BASE_URL = 'https://places-backen-setup-production.up.railway.app';
 
 export async function searchPOIs(params: SearchParams): Promise<SearchResponse> {
   // If no API URL configured, use mock data
