@@ -5,9 +5,10 @@ interface StatsBarProps {
   pois: POI[];
   searchTime: number | null;
   lastSearch: string | null;
+  totalMatches?: number;
 }
 
-export function StatsBar({ pois, searchTime, lastSearch }: StatsBarProps) {
+export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBarProps) {
   const avgScore = pois.length > 0 
     ? (pois.reduce((acc, poi) => acc + poi.poi_sim_score, 0) / pois.length * 100).toFixed(1)
     : '0';
@@ -26,8 +27,10 @@ export function StatsBar({ pois, searchTime, lastSearch }: StatsBarProps) {
               <Database className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Total POIs</p>
-              <p className="text-sm font-mono font-semibold text-foreground">{pois.length}</p>
+              <p className="text-xs text-muted-foreground">Showing / Total</p>
+              <p className="text-sm font-mono font-semibold text-foreground">
+                {pois.length} / {totalMatches ?? pois.length}
+              </p>
             </div>
           </div>
 
