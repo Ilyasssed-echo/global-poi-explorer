@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { POI, BBox } from "@/types/poi";
@@ -36,12 +36,16 @@ interface POIMapProps {
   onSelectPOI: (poi: POI) => void;
   selectedPOI: POI | null;
   onBoundsChange?: (bbox: BBox) => void;
+  resultBbox?: { xmin: number; xmax: number; ymin: number; ymax: number } | null;
 }
 
-export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
+export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const bboxLayerRef = useRef<L.Rectangle | null>(null);
+  const isInitialFitRef = useRef(true);
+  const isProgrammaticMoveRef = useRef(false);
 
   const tileConfig = useMemo(
     () => ({
@@ -51,21 +55,6 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
     }),
     [],
   );
-
-  // Handle bounds change for viewport-based queries
-  const handleBoundsChange = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !onBoundsChange) return;
-
-    const bounds = map.getBounds();
-    const bbox: BBox = {
-      north: bounds.getNorth(),
-      south: bounds.getSouth(),
-      east: bounds.getEast(),
-      west: bounds.getWest(),
-    };
-    onBoundsChange(bbox);
-  }, [onBoundsChange]);
 
   // Create map once.
   useEffect(() => {
@@ -88,6 +77,12 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
     // Listen for zoom/pan changes (debounced)
     let debounceTimer: ReturnType<typeof setTimeout>;
     map.on('moveend', () => {
+      // Skip if this was a programmatic move (like fitBounds)
+      if (isProgrammaticMoveRef.current) {
+        isProgrammaticMoveRef.current = false;
+        return;
+      }
+      
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         if (onBoundsChange) {
@@ -99,7 +94,7 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
             west: bounds.getWest(),
           });
         }
-      }, 500);
+      }, 800); // Increased debounce to 800ms
     });
 
     mapRef.current = map;
@@ -113,6 +108,32 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
       markersLayerRef.current = null;
     };
   }, [tileConfig, onBoundsChange]);
+
+  // Draw bounding box when result bbox changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Remove existing bbox
+    if (bboxLayerRef.current) {
+      map.removeLayer(bboxLayerRef.current);
+      bboxLayerRef.current = null;
+    }
+
+    if (resultBbox) {
+      const bounds = L.latLngBounds(
+        [resultBbox.ymin, resultBbox.xmin],
+        [resultBbox.ymax, resultBbox.xmax]
+      );
+      
+      bboxLayerRef.current = L.rectangle(bounds, {
+        color: '#22d3ee',
+        weight: 2,
+        fillOpacity: 0.05,
+        dashArray: '5, 5',
+      }).addTo(map);
+    }
+  }, [resultBbox]);
 
   // Render markers whenever POIs change.
   useEffect(() => {
@@ -138,6 +159,23 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
         ? [poi.addresses[0].locality, poi.addresses[0].country].filter(Boolean).join(", ")
         : null;
 
+      // Enhanced tooltip with name, lat/long, and address on hover
+      const tooltipContent = `
+        <div style="font-weight: 600; font-size: 13px;">${escapeHtml(poi.names.primary)}</div>
+        <div style="font-size: 11px; opacity: 0.7; font-family: monospace;">
+          ${poi.latitude.toFixed(5)}, ${poi.longitude.toFixed(5)}
+        </div>
+        ${location ? `<div style="font-size: 11px; opacity: 0.6;">${escapeHtml(location)}</div>` : ''}
+      `.trim();
+      
+      marker.bindTooltip(tooltipContent, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -12],
+        className: 'poi-tooltip',
+      });
+
+      // Popup for click (more details)
       marker.bindPopup(
         `
           <div style="min-width: 200px;">
@@ -153,9 +191,12 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
                 similarity,
               )}</span>
             </div>
+            <div style="font-size: 11px; opacity: 0.65; margin-top: 8px; font-family: monospace;">
+              ${poi.latitude.toFixed(5)}, ${poi.longitude.toFixed(5)}
+            </div>
             ${
               location
-                ? `<div style="font-size: 11px; opacity: 0.65; margin-top: 8px;">${escapeHtml(
+                ? `<div style="font-size: 11px; opacity: 0.65; margin-top: 4px;">${escapeHtml(
                     location,
                   )}</div>`
                 : ""
@@ -167,19 +208,39 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange }: POIMapProps) {
       marker.addTo(markersLayer);
     }
 
-    // Only fit bounds on initial load (when there's no prior view)
-    const currentZoom = map.getZoom();
-    if (currentZoom <= 2) {
+    // Only fit bounds on initial search (not on viewport re-queries)
+    if (isInitialFitRef.current && pois.length > 0) {
+      isProgrammaticMoveRef.current = true;
       const bounds = L.latLngBounds(pois.map((p) => [p.latitude, p.longitude] as [number, number]));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      isInitialFitRef.current = false;
     }
   }, [pois, onSelectPOI]);
 
   return (
     <div className="h-full w-full rounded-lg overflow-hidden border border-border glow-effect">
       <div ref={containerRef} className="h-full w-full" />
+      <style>{`
+        .poi-tooltip {
+          background: rgba(0, 0, 0, 0.85);
+          border: 1px solid rgba(34, 211, 238, 0.3);
+          border-radius: 6px;
+          padding: 8px 12px;
+          color: white;
+          font-size: 12px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        }
+        .poi-tooltip::before {
+          border-top-color: rgba(0, 0, 0, 0.85) !important;
+        }
+      `}</style>
     </div>
   );
+}
+
+// Reset initial fit flag when search params change
+export function resetMapFit() {
+  // This will be called from parent when a new search is initiated
 }
 
 function escapeHtml(input: string) {

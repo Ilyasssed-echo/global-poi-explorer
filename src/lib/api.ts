@@ -127,18 +127,19 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
     log(`   Keyword: '${params.keyword}'`);
     log(`   Similarity threshold: 0.9`);
 
-    const limit = Math.min(params.limit || 20, 500); // Cap at 500 to prevent memory issues
+    // Display limit (how many to show on map) vs query limit (how many to fetch)
+    const displayLimit = params.limit || 20;
     const keyword = params.keyword.toLowerCase().replace(/'/g, "''"); // Escape and lowercase
 
     // MEMORY-OPTIMIZED QUERY STRATEGY:
-    // 1. First pass: Select only IDs and scores with LIMIT (minimal memory)
-    // 2. This prevents loading full rows into WASM memory
-    log('🔍 Phase 1: Scanning for matching IDs (memory-optimized)...');
+    // Fetch more than display limit to allow filtering, but cap for memory safety
+    log('🔍 Scanning for matching POIs...');
     const startTime = Date.now();
 
     // Optimized SQL: Only select essential columns, use pre-filter with LIKE
     // to reduce the number of rows before computing similarity scores
     // NOTE: geometry column is already native GEOMETRY type - no ST_GeomFromWKB needed
+    // NOTE: No LIMIT in SQL - we filter in JS and limit display only
     const sql = `
       SELECT 
         id,
@@ -146,6 +147,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
         categories.primary as category,
         ST_X(geometry) as longitude,
         ST_Y(geometry) as latitude,
+        addresses as addresses_raw,
         GREATEST(
           COALESCE(jaro_winkler_similarity(lower(names.primary), '${keyword}'), 0),
           COALESCE(jaro_winkler_similarity(lower(categories.primary), '${keyword}'), 0)
@@ -159,10 +161,9 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
           OR lower(categories.primary) LIKE '%${keyword.substring(0, 4)}%'
         )
       ORDER BY poi_sim_score DESC
-      LIMIT ${limit}
     `;
 
-    log('🔍 Executing optimized SQL query...');
+    log('🔍 Executing SQL query...');
     
     const result = await conn.query(sql);
     
@@ -171,31 +172,53 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
 
     // Convert Arrow result to POI array
     const rows = result.toArray();
+    log(`📊 Raw results: ${rows.length} POIs from S3`);
     
     // Filter for similarity >= 0.9 in JS (more reliable than SQL HAVING)
     const filteredRows = rows.filter((row: any) => row.poi_sim_score >= 0.9);
-    log(`📊 Found ${filteredRows.length} POIs with similarity >= 0.9`);
+    log(`📊 After similarity filter (≥0.9): ${filteredRows.length} POIs`);
 
-    const pois: POI[] = filteredRows.map((row: any) => ({
-      id: row.id || `poi-${Math.random().toString(36).substr(2, 9)}`,
-      names: {
-        primary: row.name || 'Unknown',
-      },
-      categories: {
-        primary: row.category || 'unknown',
-      },
-      addresses: [],
-      latitude: row.latitude,
-      longitude: row.longitude,
-      poi_sim_score: row.poi_sim_score,
-    }));
+    // Parse all filtered POIs (no limit)
+    const allPois: POI[] = filteredRows.map((row: any) => {
+      // Try to parse addresses from the raw data
+      let addresses: POI['addresses'] = [];
+      try {
+        if (row.addresses_raw) {
+          const parsed = typeof row.addresses_raw === 'string' 
+            ? JSON.parse(row.addresses_raw) 
+            : row.addresses_raw;
+          if (Array.isArray(parsed)) {
+            addresses = parsed;
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+      
+      return {
+        id: row.id || `poi-${Math.random().toString(36).substr(2, 9)}`,
+        names: {
+          primary: row.name || 'Unknown',
+        },
+        categories: {
+          primary: row.category || 'unknown',
+        },
+        addresses,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        poi_sim_score: row.poi_sim_score,
+      };
+    });
 
-    log(`✅ STEP 3: COMPLETE - Returning ${pois.length} results`);
+    // Return displayLimit POIs for rendering, but report full count
+    const displayPois = allPois.slice(0, displayLimit);
+    log(`📊 Displaying top ${displayPois.length} of ${allPois.length} total POIs`);
+    log(`✅ STEP 3: COMPLETE`);
 
     return {
-      pois,
+      pois: displayPois,
       total_candidates: rows.length,
-      filtered_count: filteredRows.length,
+      filtered_count: allPois.length,
       bbox: {
         xmin: bbox.west,
         xmax: bbox.east,

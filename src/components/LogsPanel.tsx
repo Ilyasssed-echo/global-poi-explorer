@@ -29,7 +29,7 @@ export function LogsPanel({ logs }: LogsPanelProps) {
       </button>
       
       {isExpanded && (
-        <div className="px-4 pb-4 max-h-80 overflow-y-auto">
+        <div className="px-4 pb-4 max-h-[500px] overflow-y-auto">
           <div className="bg-background/50 rounded-md p-3 font-mono text-xs space-y-1">
             {logs.map((log, index) => (
               <div
@@ -38,7 +38,7 @@ export function LogsPanel({ logs }: LogsPanelProps) {
                   log.includes('✅') ? 'text-green-400' :
                   log.includes('❌') ? 'text-red-400' :
                   log.includes('⚠️') ? 'text-yellow-400' :
-                  log.includes('🗺️') || log.includes('📥') || log.includes('🔍') ? 'text-primary' :
+                  log.includes('🗺️') || log.includes('📥') || log.includes('🔍') || log.includes('📦') || log.includes('🦆') || log.includes('🧠') || log.includes('🌐') || log.includes('📊') ? 'text-primary' :
                   'text-muted-foreground'
                 }`}
               >
