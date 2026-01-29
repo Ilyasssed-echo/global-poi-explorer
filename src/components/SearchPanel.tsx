@@ -167,7 +167,7 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
         {isLoading ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Querying Overture Cloud Data...
+            Querying via DuckDB-WASM...
           </>
         ) : (
           <>
@@ -180,7 +180,7 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
       {/* Footer Info */}
       <div className="mt-6 pt-4 border-t border-border">
         <p className="text-xs text-muted-foreground text-center">
-          Powered by DuckDB + Overture Maps
+          Powered by DuckDB-WASM (in-browser)
         </p>
       </div>
     </div>
