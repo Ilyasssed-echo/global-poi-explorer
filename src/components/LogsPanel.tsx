@@ -29,7 +29,7 @@ export function LogsPanel({ logs }: LogsPanelProps) {
       </button>
       
       {isExpanded && (
-        <div className="px-4 pb-4 max-h-48 overflow-y-auto">
+        <div className="px-4 pb-4 max-h-80 overflow-y-auto">
           <div className="bg-background/50 rounded-md p-3 font-mono text-xs space-y-1">
             {logs.map((log, index) => (
               <div
