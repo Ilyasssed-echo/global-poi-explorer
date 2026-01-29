@@ -29,6 +29,13 @@ export interface POI {
 
 export type SearchMode = 'coordinate' | 'country';
 
+export interface BBox {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
 export interface SearchParams {
   keyword: string;
   mode: SearchMode;
@@ -36,4 +43,14 @@ export interface SearchParams {
   longitude?: number;
   radius?: number;
   countryCode?: string;
+  bbox?: BBox;
+  limit?: number;
+}
+
+export interface SearchResponse {
+  pois: POI[];
+  total_candidates: number;
+  filtered_count: number;
+  bbox: { xmin: number; xmax: number; ymin: number; ymax: number } | null;
+  logs: string[];
 }

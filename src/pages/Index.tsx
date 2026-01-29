@@ -1,10 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { SearchPanel } from '@/components/SearchPanel';
 import { POIMap } from '@/components/POIMap';
 import { ResultsTable } from '@/components/ResultsTable';
 import { StatsBar } from '@/components/StatsBar';
-import { POI, SearchParams } from '@/types/poi';
-import { mockPOIs } from '@/data/mockPOIs';
+import { LogsPanel } from '@/components/LogsPanel';
+import { POI, SearchParams, BBox } from '@/types/poi';
+import { searchPOIs } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
+
+const MAX_POIS_DISPLAYED = 20;
 
 const Index = () => {
   const [pois, setPois] = useState<POI[]>([]);
@@ -12,42 +16,80 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTime, setSearchTime] = useState<number | null>(null);
   const [lastSearch, setLastSearch] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  
+  // Store last search params for viewport-based requery
+  const lastSearchParams = useRef<SearchParams | null>(null);
 
   const handleSearch = useCallback(async (params: SearchParams) => {
     setIsLoading(true);
     const startTime = Date.now();
+    lastSearchParams.current = params;
     
-    // Simulate API call with mock data
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    // Filter mock data based on search params
-    const filtered = mockPOIs.filter((poi) => {
-      const matchesKeyword = 
-        poi.names.primary.toLowerCase().includes(params.keyword.toLowerCase()) ||
-        poi.categories.primary.toLowerCase().includes(params.keyword.toLowerCase());
-
-      if (params.mode === 'country' && params.countryCode) {
-        const matchesCountry = poi.addresses?.[0]?.country === params.countryCode;
-        return matchesKeyword && matchesCountry;
-      }
-
-      if (params.mode === 'coordinate' && params.latitude && params.longitude && params.radius) {
-        // Simple distance check (not accurate but good for demo)
-        const latDiff = Math.abs(poi.latitude - params.latitude);
-        const lngDiff = Math.abs(poi.longitude - params.longitude);
-        const approxDistance = Math.sqrt(latDiff ** 2 + lngDiff ** 2) * 111; // rough km conversion
-        return matchesKeyword && approxDistance <= params.radius;
-      }
-
-      return matchesKeyword;
-    });
-
-    const endTime = Date.now();
-    setSearchTime(endTime - startTime);
-    setLastSearch(`"${params.keyword}" ${params.mode === 'country' ? `in ${params.countryCode}` : `@ ${params.latitude?.toFixed(2)}, ${params.longitude?.toFixed(2)}`}`);
-    setPois(filtered.length > 0 ? filtered : mockPOIs);
-    setIsLoading(false);
+    try {
+      const response = await searchPOIs({
+        ...params,
+        limit: MAX_POIS_DISPLAYED,
+      });
+      
+      const endTime = Date.now();
+      setSearchTime(endTime - startTime);
+      setLastSearch(
+        `"${params.keyword}" ${
+          params.mode === 'country'
+            ? `in ${params.countryCode}`
+            : `@ ${params.latitude?.toFixed(2)}, ${params.longitude?.toFixed(2)}`
+        }`
+      );
+      
+      setPois(response.pois);
+      setLogs(response.logs);
+      
+      toast({
+        title: "Search complete",
+        description: `Found ${response.filtered_count} POIs (showing top ${response.pois.length})`,
+      });
+    } catch (error) {
+      console.error('Search failed:', error);
+      setLogs([`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`]);
+      toast({
+        title: "Search failed",
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  // Handle map viewport changes - reload POIs for new bounds
+  const handleBoundsChange = useCallback(async (bbox: BBox) => {
+    const params = lastSearchParams.current;
+    if (!params || isLoading) return;
+
+    // Only do viewport-based requery if we've already searched
+    if (pois.length === 0) return;
+
+    setIsLoading(true);
+    const startTime = Date.now();
+
+    try {
+      const response = await searchPOIs({
+        ...params,
+        bbox,
+        limit: MAX_POIS_DISPLAYED,
+      });
+
+      const endTime = Date.now();
+      setSearchTime(endTime - startTime);
+      setPois(response.pois);
+      setLogs(response.logs);
+    } catch (error) {
+      console.error('Viewport query failed:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [pois.length, isLoading]);
 
   const handleExportCSV = useCallback(() => {
     if (pois.length === 0) return;
@@ -76,8 +118,9 @@ const Index = () => {
     <div className="h-screen w-screen bg-background overflow-hidden">
       <div className="h-full flex">
         {/* Left Sidebar - Search Panel */}
-        <aside className="w-80 flex-shrink-0 p-4">
+        <aside className="w-80 flex-shrink-0 p-4 flex flex-col gap-4">
           <SearchPanel onSearch={handleSearch} isLoading={isLoading} />
+          <LogsPanel logs={logs} />
         </aside>
 
         {/* Main Content */}
@@ -89,7 +132,12 @@ const Index = () => {
           <div className="flex-1 grid grid-cols-5 gap-4 min-h-0">
             {/* Map - 3 columns */}
             <div className="col-span-3 min-h-0">
-              <POIMap pois={pois} selectedPOI={selectedPOI} onSelectPOI={setSelectedPOI} />
+              <POIMap
+                pois={pois}
+                selectedPOI={selectedPOI}
+                onSelectPOI={setSelectedPOI}
+                onBoundsChange={handleBoundsChange}
+              />
             </div>
 
             {/* Results Table - 2 columns */}
