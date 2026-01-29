@@ -115,7 +115,6 @@ const Index = () => {
                 pois={pois}
                 selectedPOI={selectedPOI}
                 onSelectPOI={setSelectedPOI}
-                onBoundsChange={handleBoundsChange}
                 resultBbox={resultBbox}
               />
             </div>
