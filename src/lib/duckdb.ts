@@ -20,13 +20,25 @@ export async function initDuckDB(onLog?: LogCallback): Promise<duckdb.AsyncDuckD
   initPromise = (async () => {
     onLog?.('🦆 Initializing DuckDB-WASM...');
 
-    // Use CDN-hosted bundles for better compatibility
-    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+    // Get available bundles from CDN
+    const BUNDLES = duckdb.getJsDelivrBundles();
 
     // Select a bundle based on browser capabilities
-    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+    let bundle = await duckdb.selectBundle(BUNDLES);
     
-    onLog?.('📦 Loading WASM bundle...');
+    // Force the 'eh' (Exception Handling) bundle to fix _setThrew error
+    // The 'eh' bundle has better memory handling and ZSTD decompression support
+    if (bundle.mainWorker && !bundle.mainWorker.includes('-eh')) {
+      onLog?.('⚙️ Forcing EH bundle for better stability...');
+      const ehBundle = BUNDLES.eh!;
+      bundle = {
+        mainModule: ehBundle.mainModule,
+        mainWorker: ehBundle.mainWorker,
+        pthreadWorker: (ehBundle as any).pthreadWorker ?? null,
+      };
+    }
+    
+    onLog?.('📦 Loading EH WASM bundle...');
     
     // Fetch the worker URL
     const workerUrl = URL.createObjectURL(
@@ -41,11 +53,16 @@ export async function initDuckDB(onLog?: LogCallback): Promise<duckdb.AsyncDuckD
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     URL.revokeObjectURL(workerUrl);
     
-    onLog?.('✅ DuckDB-WASM instantiated');
+    onLog?.('✅ DuckDB-WASM (EH) instantiated');
 
     // Open a connection
     connection = await db.connect();
     onLog?.('✅ Database connection established');
+
+    // Set memory limit to prevent crashes on large datasets
+    onLog?.('🧠 Setting memory limit to 2GB...');
+    await connection.query("SET max_memory='2GB';");
+    onLog?.('✅ Memory limit configured');
 
     // Install and load required extensions
     onLog?.('📦 Installing spatial extension...');
