@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { POI } from '@/types/poi';
@@ -52,13 +52,10 @@ interface POIMapProps {
   selectedPOI: POI | null;
 }
 
-export function POIMap({ pois, onSelectPOI, selectedPOI }: POIMapProps) {
-  const mapRef = useRef<L.Map>(null);
-
+export function POIMap({ pois, onSelectPOI }: POIMapProps) {
   return (
     <div className="h-full w-full rounded-lg overflow-hidden border border-border glow-effect">
       <MapContainer
-        ref={mapRef}
         center={[20, 0]}
         zoom={2}
         className="h-full w-full"
