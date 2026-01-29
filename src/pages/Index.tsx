@@ -8,7 +8,7 @@ import { POI, SearchParams, BBox } from '@/types/poi';
 import { searchPOIs } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
-const MAX_POIS_DISPLAYED = 20;
+const MAX_POIS_DISPLAYED = 100;
 
 const Index = () => {
   const [pois, setPois] = useState<POI[]>([]);
@@ -17,6 +17,7 @@ const Index = () => {
   const [searchTime, setSearchTime] = useState<number | null>(null);
   const [lastSearch, setLastSearch] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [totalFilteredCount, setTotalFilteredCount] = useState<number>(0);
   const [resultBbox, setResultBbox] = useState<{ xmin: number; xmax: number; ymin: number; ymax: number } | null>(null);
   
   // Store last search params for viewport-based requery
@@ -48,10 +49,11 @@ const Index = () => {
       setPois(response.pois);
       setLogs(response.logs);
       setResultBbox(response.bbox);
+      setTotalFilteredCount(response.filtered_count);
       
       toast({
         title: "Search complete",
-        description: `Found ${response.filtered_count} POIs (showing top ${response.pois.length})`,
+        description: `Found ${response.filtered_count} high-confidence matches (showing ${response.pois.length})`,
       });
     } catch (error) {
       console.error('Search failed:', error);
@@ -92,7 +94,11 @@ const Index = () => {
 
       const endTime = Date.now();
       setSearchTime(endTime - startTime);
-      setPois(response.pois);
+      // Only update POIs if we got results (prevents flickering)
+      if (response.pois.length > 0) {
+        setPois(response.pois);
+        setTotalFilteredCount(response.filtered_count);
+      }
       setLogs(response.logs);
       // Don't update resultBbox on viewport queries to keep original search area visible
     } catch (error) {
@@ -131,13 +137,13 @@ const Index = () => {
         {/* Left Sidebar - Search Panel */}
         <aside className="w-80 flex-shrink-0 p-4 flex flex-col gap-4">
           <SearchPanel onSearch={handleSearch} isLoading={isLoading} />
-          <LogsPanel logs={logs} />
+          <LogsPanel logs={logs} onClearLogs={() => setLogs([])} />
         </aside>
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col gap-4 p-4 pl-0">
           {/* Stats Bar */}
-          <StatsBar pois={pois} searchTime={searchTime} lastSearch={lastSearch} />
+          <StatsBar pois={pois} searchTime={searchTime} lastSearch={lastSearch} totalMatches={totalFilteredCount} />
 
           {/* Map and Results Grid */}
           <div className="flex-1 grid grid-cols-5 gap-4 min-h-0">

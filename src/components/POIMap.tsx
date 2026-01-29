@@ -56,6 +56,9 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
     [],
   );
 
+  // Track last bounds to detect significant changes
+  const lastBoundsRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
+
   // Create map once.
   useEffect(() => {
     if (!containerRef.current) return;
@@ -65,6 +68,7 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
       zoomControl: true,
       attributionControl: true,
       preferCanvas: true,
+      scrollWheelZoom: true,
     }).setView([20, 0], 2);
 
     L.tileLayer(tileConfig.url, {
@@ -74,17 +78,40 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
 
     const markersLayer = L.layerGroup().addTo(map);
 
-    // Listen for zoom/pan changes (debounced)
+    // Listen for zoom/pan changes (debounced with significant change check)
     let debounceTimer: ReturnType<typeof setTimeout>;
     map.on('moveend', () => {
       // Skip if this was a programmatic move (like fitBounds)
       if (isProgrammaticMoveRef.current) {
         isProgrammaticMoveRef.current = false;
+        lastBoundsRef.current = { center: map.getCenter(), zoom: map.getZoom() };
         return;
       }
       
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        const currentCenter = map.getCenter();
+        const currentZoom = map.getZoom();
+        
+        // Check if change is significant (moved more than 10% of view or zoom changed)
+        if (lastBoundsRef.current) {
+          const lastCenter = lastBoundsRef.current.center;
+          const bounds = map.getBounds();
+          const latDiff = Math.abs(bounds.getNorth() - bounds.getSouth());
+          const lngDiff = Math.abs(bounds.getEast() - bounds.getWest());
+          
+          const centerMoved = 
+            Math.abs(currentCenter.lat - lastCenter.lat) > latDiff * 0.1 ||
+            Math.abs(currentCenter.lng - lastCenter.lng) > lngDiff * 0.1;
+          const zoomChanged = currentZoom !== lastBoundsRef.current.zoom;
+          
+          if (!centerMoved && !zoomChanged) {
+            return; // Skip insignificant changes
+          }
+        }
+        
+        lastBoundsRef.current = { center: currentCenter, zoom: currentZoom };
+        
         if (onBoundsChange) {
           const bounds = map.getBounds();
           onBoundsChange({
@@ -94,7 +121,7 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
             west: bounds.getWest(),
           });
         }
-      }, 800); // Increased debounce to 800ms
+      }, 500); // 500ms debounce
     });
 
     mapRef.current = map;
