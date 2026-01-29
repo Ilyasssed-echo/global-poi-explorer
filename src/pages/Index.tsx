@@ -17,12 +17,15 @@ const Index = () => {
   const [searchTime, setSearchTime] = useState<number | null>(null);
   const [lastSearch, setLastSearch] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [resultBbox, setResultBbox] = useState<{ xmin: number; xmax: number; ymin: number; ymax: number } | null>(null);
   
   // Store last search params for viewport-based requery
   const lastSearchParams = useRef<SearchParams | null>(null);
+  const isInitialSearchRef = useRef(true);
 
   const handleSearch = useCallback(async (params: SearchParams) => {
     setIsLoading(true);
+    isInitialSearchRef.current = true; // Mark as initial search
     const startTime = Date.now();
     lastSearchParams.current = params;
     
@@ -44,6 +47,7 @@ const Index = () => {
       
       setPois(response.pois);
       setLogs(response.logs);
+      setResultBbox(response.bbox);
       
       toast({
         title: "Search complete",
@@ -69,6 +73,12 @@ const Index = () => {
 
     // Only do viewport-based requery if we've already searched
     if (pois.length === 0) return;
+    
+    // Skip the first bounds change after initial search (prevents loop)
+    if (isInitialSearchRef.current) {
+      isInitialSearchRef.current = false;
+      return;
+    }
 
     setIsLoading(true);
     const startTime = Date.now();
@@ -84,6 +94,7 @@ const Index = () => {
       setSearchTime(endTime - startTime);
       setPois(response.pois);
       setLogs(response.logs);
+      // Don't update resultBbox on viewport queries to keep original search area visible
     } catch (error) {
       console.error('Viewport query failed:', error);
     } finally {
@@ -137,6 +148,7 @@ const Index = () => {
                 selectedPOI={selectedPOI}
                 onSelectPOI={setSelectedPOI}
                 onBoundsChange={handleBoundsChange}
+                resultBbox={resultBbox}
               />
             </div>
 
