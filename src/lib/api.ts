@@ -1,78 +1,64 @@
-import { SearchParams, SearchResponse, POI, BBox } from '@/types/poi';
-import { initDuckDB, isInitialized, LogCallback } from './duckdb';
+import { SearchParams, SearchResponse, POI, BBox } from "@/types/poi";
+import { initDuckDB, isInitialized, LogCallback } from "./duckdb";
 
-const OVERTURE_PATH = 's3://overturemaps-us-west-2/release/2026-01-21.0/theme=places/type=place/*.parquet';
-const GEOJSON_URL = 'https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson';
+const OVERTURE_PATH = "s3://overturemaps-us-west-2/release/2026-01-21.0/theme=places/type=place/*.parquet";
+const GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson";
 
-// Cache for country geometries
 let countriesGeoJSON: any = null;
 
-async function fetchCountryBoundary(countryCode: string, onLog?: LogCallback): Promise<{ bbox: BBox; wkt: string } | null> {
-  onLog?.(`🗺️ Fetching country boundary for ${countryCode}...`);
-  
+async function fetchCountryBoundary(
+  countryCode: string,
+  onLog?: LogCallback,
+): Promise<{ bbox: BBox; wkt: string } | null> {
+  onLog?.(`🗺️ Resolving boundary for ${countryCode}...`);
+
   if (!countriesGeoJSON) {
-    onLog?.('📥 Downloading world boundaries GeoJSON...');
     const response = await fetch(GEOJSON_URL);
     countriesGeoJSON = await response.json();
-    onLog?.(`✅ Downloaded ${countriesGeoJSON.features.length} country boundaries`);
   }
 
-  // Find country feature by ISO code
-  const feature = countriesGeoJSON.features.find((f: any) => 
-    f.properties.ISO_A2 === countryCode || 
-    f.properties.iso_a2 === countryCode ||
-    f.properties.ISO_A3 === countryCode ||
-    f.properties.iso_a3 === countryCode
+  const feature = countriesGeoJSON.features.find((f: any) =>
+    [f.properties.ISO_A2, f.properties.iso_a2, f.properties.ISO_A3, f.properties.iso_a3].includes(countryCode),
   );
 
-  if (!feature) {
-    onLog?.(`❌ Country ${countryCode} not found in boundaries`);
-    return null;
-  }
+  if (!feature) return null;
 
-  onLog?.(`✅ Found boundary for ${feature.properties.name || countryCode}`);
-
-  // Calculate bounding box from geometry
-  const coords = feature.geometry.coordinates;
-  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-
+  // Process BBox
+  let minLon = Infinity,
+    maxLon = -Infinity,
+    minLat = Infinity,
+    maxLat = -Infinity;
   const processCoords = (c: any) => {
-    if (typeof c[0] === 'number') {
+    if (typeof c[0] === "number") {
       minLon = Math.min(minLon, c[0]);
       maxLon = Math.max(maxLon, c[0]);
       minLat = Math.min(minLat, c[1]);
       maxLat = Math.max(maxLat, c[1]);
-    } else {
-      c.forEach(processCoords);
-    }
+    } else c.forEach(processCoords);
   };
-  processCoords(coords);
+  processCoords(feature.geometry.coordinates);
 
-  // Convert GeoJSON geometry to WKT for DuckDB
+  // Convert to WKT
   const geometryToWKT = (geom: any): string => {
-    if (geom.type === 'Polygon') {
-      const rings = geom.coordinates.map((ring: number[][]) => 
-        '(' + ring.map((c: number[]) => `${c[0]} ${c[1]}`).join(', ') + ')'
-      ).join(', ');
+    if (geom.type === "Polygon") {
+      const rings = geom.coordinates
+        .map((r: any) => "(" + r.map((p: any) => `${p[0]} ${p[1]}`).join(", ") + ")")
+        .join(", ");
       return `POLYGON(${rings})`;
-    } else if (geom.type === 'MultiPolygon') {
-      const polygons = geom.coordinates.map((poly: number[][][]) => 
-        '(' + poly.map((ring: number[][]) => 
-          '(' + ring.map((c: number[]) => `${c[0]} ${c[1]}`).join(', ') + ')'
-        ).join(', ') + ')'
-      ).join(', ');
-      return `MULTIPOLYGON(${polygons})`;
+    } else if (geom.type === "MultiPolygon") {
+      const polys = geom.coordinates
+        .map(
+          (p: any) =>
+            "(" + p.map((r: any) => "(" + r.map((pt: any) => `${pt[0]} ${pt[1]}`).join(", ") + ")").join(", ") + ")",
+        )
+        .join(", ");
+      return `MULTIPOLYGON(${polys})`;
     }
-    return '';
+    return "";
   };
 
   return {
-    bbox: {
-      west: minLon,
-      east: maxLon,
-      south: minLat,
-      north: maxLat,
-    },
+    bbox: { west: minLon, east: maxLon, south: minLat, north: maxLat },
     wkt: geometryToWKT(feature.geometry),
   };
 }
@@ -85,61 +71,39 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
   };
 
   try {
-    // Initialize DuckDB if not already done
-    if (!isInitialized()) {
-      await initDuckDB(log);
-    }
+    const conn = await initDuckDB(log);
+    log("🗺️ STEP 1: SPATIAL RESOLUTION");
 
-    const conn = await initDuckDB();
-
+    let spatialFilter = "";
     let bbox: BBox;
 
-    // STEP 1: Resolve search area
-    log('🗺️ STEP 1: RESOLVING SEARCH AREA');
-
-    if (params.mode === 'country' && params.countryCode) {
+    if (params.mode === "country" && params.countryCode) {
       const countryData = await fetchCountryBoundary(params.countryCode, log);
-      if (!countryData) {
-        throw new Error(`Country ${params.countryCode} not found`);
-      }
+      if (!countryData) throw new Error(`Country ${params.countryCode} not found`);
       bbox = countryData.bbox;
-      log(`   Bounding box: [${bbox.west.toFixed(2)}, ${bbox.south.toFixed(2)}] to [${bbox.east.toFixed(2)}, ${bbox.north.toFixed(2)}]`);
-    } else if (params.mode === 'coordinate' && params.latitude && params.longitude && params.radius) {
-      // Convert radius (km) to approximate degree offset
-      const offset = params.radius / 111.0; // ~111km per degree
-      bbox = {
-        west: params.longitude - offset,
-        east: params.longitude + offset,
-        south: params.latitude - offset,
-        north: params.latitude + offset,
-      };
-      log(`   Center: (${params.latitude}, ${params.longitude}), Radius: ${params.radius}km`);
-      log(`   Bounding box: [${bbox.west.toFixed(4)}, ${bbox.south.toFixed(4)}] to [${bbox.east.toFixed(4)}, ${bbox.north.toFixed(4)}]`);
-    } else if (params.bbox) {
-      bbox = params.bbox;
-      log(`   Using viewport bbox: [${bbox.west.toFixed(2)}, ${bbox.south.toFixed(2)}] to [${bbox.east.toFixed(2)}, ${bbox.north.toFixed(2)}]`);
+      spatialFilter = `
+        bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east}
+        AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
+        AND ST_Intersects(geometry, ST_GeomFromText('${countryData.wkt}'))
+      `;
     } else {
-      throw new Error('Invalid search parameters: missing location data');
+      const offset = (params.radius || 5) / 111.0;
+      bbox = {
+        west: params.longitude! - offset,
+        east: params.longitude! + offset,
+        south: params.latitude! - offset,
+        north: params.latitude! + offset,
+      };
+      spatialFilter = `
+        bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east} 
+        AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
+      `;
     }
 
-    // STEP 2: Query Overture S3 with DuckDB-WASM (Memory-Optimized)
-    log('📥 STEP 2: QUERYING OVERTURE S3 DATA');
-    log(`   Keyword: '${params.keyword}'`);
-    log(`   Similarity threshold: 0.9`);
+    log("📥 STEP 2: CLOUD QUERY (STRICT 0.9 SIMILARITY)");
+    const keyword = params.keyword.toLowerCase().replace(/'/g, "''");
+    const displayLimit = params.limit || 50;
 
-    // Display limit (how many to show on map) vs query limit (how many to fetch)
-    const displayLimit = params.limit || 20;
-    const keyword = params.keyword.toLowerCase().replace(/'/g, "''"); // Escape and lowercase
-
-    // MEMORY-OPTIMIZED QUERY STRATEGY:
-    // Fetch more than display limit to allow filtering, but cap for memory safety
-    log('🔍 Scanning for matching POIs...');
-    const startTime = Date.now();
-
-    // Optimized SQL: Only select essential columns, use pre-filter with LIKE
-    // to reduce the number of rows before computing similarity scores
-    // NOTE: geometry column is already native GEOMETRY type - no ST_GeomFromWKB needed
-    // NOTE: No LIMIT in SQL - we filter in JS and limit display only
     const sql = `
       SELECT 
         id,
@@ -149,94 +113,49 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
         ST_Y(geometry) as latitude,
         addresses as addresses_raw,
         GREATEST(
-          COALESCE(jaro_winkler_similarity(lower(names.primary), '${keyword}'), 0),
-          COALESCE(jaro_winkler_similarity(lower(categories.primary), '${keyword}'), 0)
+          jaro_winkler_similarity(lower(names.primary), '${keyword}'),
+          jaro_winkler_similarity(lower(basic_category), '${keyword}'),
+          jaro_winkler_similarity(lower(categories.primary), '${keyword}'),
+          COALESCE((SELECT max(jaro_winkler_similarity(lower(x), '${keyword}')) FROM unnest(categories.alternate) t(x)), 0),
+          COALESCE((SELECT max(jaro_winkler_similarity(lower(x), '${keyword}')) FROM unnest(taxonomy.hierarchy) t(x)), 0)
         ) as poi_sim_score
       FROM read_parquet('${OVERTURE_PATH}', hive_partitioning=1)
-      WHERE 
-        bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east}
-        AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
+      WHERE ${spatialFilter}
         AND (
-          lower(names.primary) LIKE '%${keyword.substring(0, 4)}%'
-          OR lower(categories.primary) LIKE '%${keyword.substring(0, 4)}%'
+          lower(names.primary) LIKE '%${keyword.substring(0, 3)}%' 
+          OR lower(categories.primary) LIKE '%${keyword.substring(0, 3)}%'
+          OR lower(basic_category) LIKE '%${keyword.substring(0, 3)}%'
         )
       ORDER BY poi_sim_score DESC
+      LIMIT 1000;
     `;
 
-    log('🔍 Executing SQL query...');
-    
     const result = await conn.query(sql);
-    
-    const queryTime = Date.now() - startTime;
-    log(`✅ Query completed in ${queryTime}ms`);
-
-    // Convert Arrow result to POI array
     const rows = result.toArray();
-    log(`📊 Raw results: ${rows.length} POIs from S3`);
-    
-    // Filter for similarity >= 0.9 in JS (more reliable than SQL HAVING)
-    const filteredRows = rows.filter((row: any) => row.poi_sim_score >= 0.9);
-    log(`📊 After similarity filter (≥0.9): ${filteredRows.length} POIs`);
 
-    // Parse all filtered POIs (no limit)
-    const allPois: POI[] = filteredRows.map((row: any) => {
-      // Try to parse addresses from the raw data
-      let addresses: POI['addresses'] = [];
-      try {
-        if (row.addresses_raw) {
-          const parsed = typeof row.addresses_raw === 'string' 
-            ? JSON.parse(row.addresses_raw) 
-            : row.addresses_raw;
-          if (Array.isArray(parsed)) {
-            addresses = parsed;
-          }
-        }
-      } catch {
-        // Ignore parse errors
-      }
-      
-      return {
-        id: row.id || `poi-${Math.random().toString(36).substr(2, 9)}`,
-        names: {
-          primary: row.name || 'Unknown',
-        },
-        categories: {
-          primary: row.category || 'unknown',
-        },
-        addresses,
-        latitude: row.latitude,
-        longitude: row.longitude,
-        poi_sim_score: row.poi_sim_score,
-      };
-    });
+    const allPois: POI[] = rows
+      .map((row: any) => ({
+        id: row.id,
+        names: { primary: row.name || "Unknown" },
+        categories: { primary: row.category || "unknown" },
+        addresses: row.addresses_raw || [],
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        poi_sim_score: Number(row.poi_sim_score),
+      }))
+      .filter((poi) => poi.poi_sim_score >= 0.9);
 
-    // Return displayLimit POIs for rendering, but report full count
-    const displayPois = allPois.slice(0, displayLimit);
-    log(`📊 Displaying top ${displayPois.length} of ${allPois.length} total POIs`);
-    log(`✅ STEP 3: COMPLETE`);
+    log(`✅ Found ${allPois.length} high-confidence matches.`);
 
     return {
-      pois: displayPois,
+      pois: allPois.slice(0, displayLimit),
       total_candidates: rows.length,
       filtered_count: allPois.length,
-      bbox: {
-        xmin: bbox.west,
-        xmax: bbox.east,
-        ymin: bbox.south,
-        ymax: bbox.north,
-      },
+      bbox: { xmin: bbox.west, xmax: bbox.east, ymin: bbox.south, ymax: bbox.north },
       logs,
     };
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    log(`❌ Error: ${errorMsg}`);
-    
-    return {
-      pois: [],
-      total_candidates: 0,
-      filtered_count: 0,
-      bbox: null,
-      logs,
-    };
+    log(`❌ Error: ${error instanceof Error ? error.message : "Unknown"}`);
+    return { pois: [], total_candidates: 0, filtered_count: 0, bbox: null, logs };
   }
 }
