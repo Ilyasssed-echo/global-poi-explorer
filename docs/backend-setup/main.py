@@ -129,15 +129,15 @@ async def search_pois(request: SearchRequest):
     # Query with bbox filter
     if request.mode == 'country' and request.country_code:
         sql = f"""
-            SELECT *, ST_X(geometry) as longitude, ST_Y(geometry) as latitude
+            SELECT *, ST_X(ST_GeomFromWKB(geometry)) as longitude, ST_Y(ST_GeomFromWKB(geometry)) as latitude
             FROM read_parquet('{overture_path}', hive_partitioning=1)
             WHERE bbox.xmin > {bbox['xmin']} AND bbox.xmax < {bbox['xmax']}
               AND bbox.ymin > {bbox['ymin']} AND bbox.ymax < {bbox['ymax']}
-              AND ST_Intersects(geometry, (SELECT geom FROM target_country))
+              AND ST_Intersects(ST_GeomFromWKB(geometry), (SELECT geom FROM target_country))
         """
     else:
         sql = f"""
-            SELECT *, ST_X(geometry) as longitude, ST_Y(geometry) as latitude
+            SELECT *, ST_X(ST_GeomFromWKB(geometry)) as longitude, ST_Y(ST_GeomFromWKB(geometry)) as latitude
             FROM read_parquet('{overture_path}', hive_partitioning=1)
             WHERE bbox.xmin > {bbox['xmin']} AND bbox.xmax < {bbox['xmax']}
               AND bbox.ymin > {bbox['ymin']} AND bbox.ymax < {bbox['ymax']}
