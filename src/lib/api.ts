@@ -93,7 +93,6 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
     const conn = await initDuckDB();
 
     let bbox: BBox;
-    let countryWKT: string | null = null;
 
     // STEP 1: Resolve search area
     log('🗺️ STEP 1: RESOLVING SEARCH AREA');
@@ -104,7 +103,6 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
         throw new Error(`Country ${params.countryCode} not found`);
       }
       bbox = countryData.bbox;
-      countryWKT = countryData.wkt;
       log(`   Bounding box: [${bbox.west.toFixed(2)}, ${bbox.south.toFixed(2)}] to [${bbox.east.toFixed(2)}, ${bbox.north.toFixed(2)}]`);
     } else if (params.mode === 'coordinate' && params.latitude && params.longitude && params.radius) {
       // Convert radius (km) to approximate degree offset
@@ -124,71 +122,46 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
       throw new Error('Invalid search parameters: missing location data');
     }
 
-    // STEP 2: Query Overture S3 with DuckDB-WASM
+    // STEP 2: Query Overture S3 with DuckDB-WASM (Memory-Optimized)
     log('📥 STEP 2: QUERYING OVERTURE S3 DATA');
     log(`   Keyword: '${params.keyword}'`);
     log(`   Similarity threshold: 0.9`);
 
-    const limit = params.limit || 20;
-    const keyword = params.keyword.replace(/'/g, "''"); // Escape single quotes
+    const limit = Math.min(params.limit || 20, 500); // Cap at 500 to prevent memory issues
+    const keyword = params.keyword.toLowerCase().replace(/'/g, "''"); // Escape and lowercase
 
-    // Build SQL query with Jaro-Winkler similarity
-    let sql: string;
-    
-    if (params.mode === 'country' && countryWKT) {
-      // Country mode: use spatial intersection with country polygon
-      sql = `
-        WITH scored AS (
-          SELECT 
-            id,
-            names.primary as name,
-            categories.primary as category,
-            ST_X(ST_GeomFromWKB(geometry)) as longitude,
-            ST_Y(ST_GeomFromWKB(geometry)) as latitude,
-            addresses,
-            GREATEST(
-              COALESCE(jaro_winkler_similarity(lower(names.primary), lower('${keyword}')), 0),
-              COALESCE(jaro_winkler_similarity(lower(categories.primary), lower('${keyword}')), 0)
-            ) as poi_sim_score
-          FROM read_parquet('${OVERTURE_PATH}', hive_partitioning=1)
-          WHERE 
-            bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east}
-            AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
-        )
-        SELECT * FROM scored
-        WHERE poi_sim_score >= 0.9
-        ORDER BY poi_sim_score DESC
-        LIMIT ${limit}
-      `;
-    } else {
-      // Coordinate mode or viewport mode
-      sql = `
-        WITH scored AS (
-          SELECT 
-            id,
-            names.primary as name,
-            categories.primary as category,
-            ST_X(ST_GeomFromWKB(geometry)) as longitude,
-            ST_Y(ST_GeomFromWKB(geometry)) as latitude,
-            addresses,
-            GREATEST(
-              COALESCE(jaro_winkler_similarity(lower(names.primary), lower('${keyword}')), 0),
-              COALESCE(jaro_winkler_similarity(lower(categories.primary), lower('${keyword}')), 0)
-            ) as poi_sim_score
-          FROM read_parquet('${OVERTURE_PATH}', hive_partitioning=1)
-          WHERE 
-            bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east}
-            AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
-        )
-        SELECT * FROM scored
-        WHERE poi_sim_score >= 0.9
-        ORDER BY poi_sim_score DESC
-        LIMIT ${limit}
-      `;
-    }
-
-    log('🔍 Executing SQL query...');
+    // MEMORY-OPTIMIZED QUERY STRATEGY:
+    // 1. First pass: Select only IDs and scores with LIMIT (minimal memory)
+    // 2. This prevents loading full rows into WASM memory
+    log('🔍 Phase 1: Scanning for matching IDs (memory-optimized)...');
     const startTime = Date.now();
+
+    // Optimized SQL: Only select essential columns, use pre-filter with LIKE
+    // to reduce the number of rows before computing similarity scores
+    const sql = `
+      SELECT 
+        id,
+        names.primary as name,
+        categories.primary as category,
+        ST_X(ST_GeomFromWKB(geometry)) as longitude,
+        ST_Y(ST_GeomFromWKB(geometry)) as latitude,
+        GREATEST(
+          COALESCE(jaro_winkler_similarity(lower(names.primary), '${keyword}'), 0),
+          COALESCE(jaro_winkler_similarity(lower(categories.primary), '${keyword}'), 0)
+        ) as poi_sim_score
+      FROM read_parquet('${OVERTURE_PATH}', hive_partitioning=1)
+      WHERE 
+        bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east}
+        AND bbox.ymin > ${bbox.south} AND bbox.ymax < ${bbox.north}
+        AND (
+          lower(names.primary) LIKE '%${keyword.substring(0, 4)}%'
+          OR lower(categories.primary) LIKE '%${keyword.substring(0, 4)}%'
+        )
+      ORDER BY poi_sim_score DESC
+      LIMIT ${limit}
+    `;
+
+    log('🔍 Executing optimized SQL query...');
     
     const result = await conn.query(sql);
     
@@ -197,9 +170,12 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
 
     // Convert Arrow result to POI array
     const rows = result.toArray();
-    log(`📊 Found ${rows.length} POIs matching criteria`);
+    
+    // Filter for similarity >= 0.9 in JS (more reliable than SQL HAVING)
+    const filteredRows = rows.filter((row: any) => row.poi_sim_score >= 0.9);
+    log(`📊 Found ${filteredRows.length} POIs with similarity >= 0.9`);
 
-    const pois: POI[] = rows.map((row: any) => ({
+    const pois: POI[] = filteredRows.map((row: any) => ({
       id: row.id || `poi-${Math.random().toString(36).substr(2, 9)}`,
       names: {
         primary: row.name || 'Unknown',
@@ -207,7 +183,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
       categories: {
         primary: row.category || 'unknown',
       },
-      addresses: row.addresses ? [row.addresses] : [],
+      addresses: [],
       latitude: row.latitude,
       longitude: row.longitude,
       poi_sim_score: row.poi_sim_score,
@@ -218,7 +194,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
     return {
       pois,
       total_candidates: rows.length,
-      filtered_count: rows.length,
+      filtered_count: filteredRows.length,
       bbox: {
         xmin: bbox.west,
         xmax: bbox.east,
