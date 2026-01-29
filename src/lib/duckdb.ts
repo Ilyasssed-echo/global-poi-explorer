@@ -1,6 +1,4 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
-import duckdb_wasm from '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url';
-import duckdb_worker from '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url';
 
 let db: duckdb.AsyncDuckDB | null = null;
 let connection: duckdb.AsyncDuckDBConnection | null = null;
@@ -22,26 +20,27 @@ export async function initDuckDB(onLog?: LogCallback): Promise<duckdb.AsyncDuckD
   initPromise = (async () => {
     onLog?.('🦆 Initializing DuckDB-WASM...');
 
-    const MANUAL_BUNDLES: duckdb.DuckDBBundles = {
-      mvp: {
-        mainModule: duckdb_wasm,
-        mainWorker: duckdb_worker,
-      },
-      eh: {
-        mainModule: duckdb_wasm,
-        mainWorker: duckdb_worker,
-      },
-    };
+    // Use CDN-hosted bundles for better compatibility
+    const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
 
     // Select a bundle based on browser capabilities
-    const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
+    const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
     
+    onLog?.('📦 Loading WASM bundle...');
+    
+    // Fetch the worker URL
+    const workerUrl = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker!}");`], { type: 'text/javascript' })
+    );
+
     // Instantiate the async DuckDB
-    const worker = new Worker(bundle.mainWorker!);
-    const logger = new duckdb.ConsoleLogger();
+    const worker = new Worker(workerUrl);
+    const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
     db = new duckdb.AsyncDuckDB(logger, worker);
     
-    await db.instantiate(bundle.mainModule);
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    URL.revokeObjectURL(workerUrl);
+    
     onLog?.('✅ DuckDB-WASM instantiated');
 
     // Open a connection
@@ -59,7 +58,7 @@ export async function initDuckDB(onLog?: LogCallback): Promise<duckdb.AsyncDuckD
     await connection.query('LOAD httpfs;');
     onLog?.('✅ HTTPFS extension loaded');
 
-    // Configure S3 access for Overture Maps
+    // Configure S3 access for Overture Maps (public bucket, no auth needed)
     onLog?.('🌐 Configuring S3 access...');
     await connection.query("SET s3_region='us-west-2';");
     onLog?.('✅ S3 region set to us-west-2');
