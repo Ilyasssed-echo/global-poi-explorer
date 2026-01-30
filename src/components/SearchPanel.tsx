@@ -132,7 +132,20 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <Label className="text-xs text-muted-foreground">Radius</Label>
-                <span className="text-xs font-mono text-primary">{radius} km</span>
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    value={radius}
+                    onChange={(e) => {
+                      let val = parseInt(e.target.value) || 0;
+                      if (val < 0) val = 0;
+                      if (val > 1000) val = 1000;
+                      setRadius(val);
+                    }}
+                    className="w-16 h-6 text-xs font-mono text-primary bg-input border-border text-center px-1"
+                  />
+                  <span className="text-xs text-muted-foreground">km</span>
+                </div>
               </div>
               <Slider
                 value={[radius]}
