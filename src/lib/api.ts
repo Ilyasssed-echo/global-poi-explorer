@@ -154,8 +154,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
         AND (
           jaro_winkler_similarity(lower(names.primary), '${keyword}') >= 0.8 OR
           jaro_winkler_similarity(lower(basic_category), '${keyword}') >= 0.8
-        )
-      LIMIT 1000;
+        );
     `;
 
     const result = await conn.query(sql);
