@@ -70,17 +70,38 @@ const Index = () => {
   const handleExportCSV = useCallback(() => {
     if (pois.length === 0) return;
 
-    const headers = ['Name', 'Category', 'Latitude', 'Longitude', 'Score', 'Location'];
-    const rows = pois.map((poi) => [
-      poi.names.primary,
-      poi.categories.primary,
-      poi.latitude.toString(),
-      poi.longitude.toString(),
-      (poi.poi_sim_score * 100).toFixed(1) + '%',
-      [poi.addresses?.[0]?.locality, poi.addresses?.[0]?.country].filter(Boolean).join(', '),
+    const headers = [
+      'names', 'categories', 'basic_category', 'taxonomy', 'confidence',
+      'websites', 'socials', 'emails', 'phones', 'brand', 'addresses',
+      'operating_status', 'theme', 'type', 'longitude', 'latitude'
+    ];
+
+    const stringify = (val: any): string => {
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'object') return JSON.stringify(val);
+      return String(val);
+    };
+
+    const rows = pois.map((poi: any) => [
+      stringify(poi.names),
+      stringify(poi.categories),
+      stringify(poi.basic_category),
+      stringify(poi.taxonomy),
+      stringify(poi.confidence),
+      stringify(poi.websites),
+      stringify(poi.socials),
+      stringify(poi.emails),
+      stringify(poi.phones),
+      stringify(poi.brand),
+      stringify(poi.addresses),
+      stringify(poi.operating_status),
+      stringify(poi.theme),
+      stringify(poi.type),
+      stringify(poi.longitude),
+      stringify(poi.latitude),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(','))].join('\n');
+    const csvContent = [headers.join(','), ...rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
