@@ -18,17 +18,17 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
     : 0;
 
   return (
-    <div className="glass-panel rounded-lg p-3">
-      <div className="flex items-center justify-between gap-6">
-        <div className="flex items-center gap-6">
+    <div className="glass-panel rounded-lg p-3 overflow-x-auto">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 min-w-max sm:min-w-0">
+        <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
           {/* POI Count */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary/20 flex items-center justify-center">
-              <Database className="w-4 h-4 text-primary" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-primary/20 flex items-center justify-center">
+              <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Showing / Total</p>
-              <p className="text-sm font-mono font-semibold text-foreground">
+              <p className="text-[10px] sm:text-xs text-muted-foreground">Showing / Total</p>
+              <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">
                 {pois.length} / {totalMatches ?? pois.length}
               </p>
             </div>
@@ -36,35 +36,35 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
 
           {/* Countries */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-data-success/20 flex items-center justify-center">
-              <Globe className="w-4 h-4 text-data-success" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-data-success/20 flex items-center justify-center">
+              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-data-success" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Countries</p>
-              <p className="text-sm font-mono font-semibold text-foreground">{uniqueCountries}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">Countries</p>
+              <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">{uniqueCountries}</p>
             </div>
           </div>
 
           {/* Avg Score */}
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-data-warning/20 flex items-center justify-center">
-              <Zap className="w-4 h-4 text-data-warning" />
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-data-warning/20 flex items-center justify-center">
+              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-data-warning" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Avg Score</p>
-              <p className="text-sm font-mono font-semibold text-foreground">{avgScore}%</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">Avg Score</p>
+              <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">{avgScore}%</p>
             </div>
           </div>
 
           {/* Query Time */}
           {searchTime !== null && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-md bg-data-info/20 flex items-center justify-center">
-                <Clock className="w-4 h-4 text-data-info" />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-data-info/20 flex items-center justify-center">
+                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-data-info" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Query Time</p>
-                <p className="text-sm font-mono font-semibold text-foreground">{searchTime}ms</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground">Query Time</p>
+                <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">{searchTime}ms</p>
               </div>
             </div>
           )}
@@ -72,9 +72,9 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
 
         {/* Last Search */}
         {lastSearch && (
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Last Search</p>
-            <p className="text-sm font-mono text-primary">{lastSearch}</p>
+          <div className="text-left sm:text-right">
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Last Search</p>
+            <p className="text-xs sm:text-sm font-mono text-primary truncate max-w-[200px] sm:max-w-none">{lastSearch}</p>
           </div>
         )}
       </div>
