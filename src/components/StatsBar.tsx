@@ -1,4 +1,4 @@
-import { Database, Globe, Zap, Clock } from 'lucide-react';
+import { Database, Zap, Clock } from 'lucide-react';
 import { POI } from '@/types/poi';
 
 interface StatsBarProps {
@@ -12,10 +12,6 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
   const avgScore = pois.length > 0 
     ? (pois.reduce((acc, poi) => acc + poi.poi_sim_score, 0) / pois.length * 100).toFixed(1)
     : '0';
-
-  const uniqueCountries = pois.length > 0 
-    ? new Set(pois.map((poi) => poi.addresses?.[0]?.country).filter(Boolean)).size
-    : 0;
 
   return (
     <div className="glass-panel rounded-lg p-3 overflow-x-auto">
@@ -34,16 +30,6 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
             </div>
           </div>
 
-          {/* Countries */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-md bg-data-success/20 flex items-center justify-center">
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-data-success" />
-            </div>
-            <div>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">Countries</p>
-              <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">{uniqueCountries}</p>
-            </div>
-          </div>
 
           {/* Avg Score */}
           <div className="flex items-center gap-2">
