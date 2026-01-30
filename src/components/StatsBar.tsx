@@ -27,9 +27,9 @@ export function StatsBar({ pois, searchTime, lastSearch, totalMatches }: StatsBa
               <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
             </div>
             <div>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">Showing / Total</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">Results</p>
               <p className="text-xs sm:text-sm font-mono font-semibold text-foreground">
-                {pois.length} / {totalMatches ?? pois.length}
+                {totalMatches ?? pois.length}
               </p>
             </div>
           </div>
