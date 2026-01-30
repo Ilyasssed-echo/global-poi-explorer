@@ -27,10 +27,10 @@ export function ResultsTable({ pois, selectedPOI, onSelectPOI, onExportCSV }: Re
   return (
     <div className="h-full flex flex-col glass-panel rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div className="flex items-center gap-3">
-          <h2 className="font-semibold text-foreground">Results</h2>
-          <span className="px-2 py-0.5 text-xs font-mono bg-primary/20 text-primary rounded">
+      <div className="flex items-center justify-between p-3 sm:p-4 border-b border-border gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <h2 className="font-semibold text-sm sm:text-base text-foreground">Results</h2>
+          <span className="px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-mono bg-primary/20 text-primary rounded">
             {pois.length} POIs
           </span>
         </div>
@@ -39,10 +39,11 @@ export function ResultsTable({ pois, selectedPOI, onSelectPOI, onExportCSV }: Re
           size="sm"
           onClick={onExportCSV}
           disabled={pois.length === 0}
-          className="border-border hover:bg-secondary hover:text-foreground"
+          className="border-border hover:bg-secondary hover:text-foreground text-xs sm:text-sm px-2 sm:px-3"
         >
-          <Download className="w-4 h-4 mr-2" />
-          Export CSV
+          <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+          <span className="hidden sm:inline">Export CSV</span>
+          <span className="sm:hidden">CSV</span>
         </Button>
       </div>
 

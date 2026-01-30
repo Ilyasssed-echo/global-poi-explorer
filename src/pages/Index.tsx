@@ -91,23 +91,25 @@ const Index = () => {
   }, [pois]);
 
   return (
-    <div className="h-screen w-screen bg-background overflow-hidden">
-      <div className="h-full flex">
+    <div className="min-h-screen w-screen bg-background overflow-x-hidden">
+      <div className="h-full flex flex-col lg:flex-row">
         {/* Left Sidebar - Search Panel */}
-        <aside className="w-80 flex-shrink-0 p-4 flex flex-col gap-4">
+        <aside className="w-full lg:w-80 flex-shrink-0 p-4 flex flex-col gap-4">
           <SearchPanel onSearch={handleSearch} isLoading={isLoading} />
-          <LogsPanel logs={logs} onClearLogs={() => setLogs([])} />
+          <div className="hidden lg:block">
+            <LogsPanel logs={logs} onClearLogs={() => setLogs([])} />
+          </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col gap-4 p-4 pl-0">
+        <main className="flex-1 flex flex-col gap-4 p-4 lg:pl-0">
           {/* Stats Bar */}
           <StatsBar pois={pois} searchTime={searchTime} lastSearch={lastSearch} totalMatches={totalFilteredCount} />
 
           {/* Map and Results Grid */}
-          <div className="flex-1 grid grid-cols-5 gap-4 min-h-0">
-            {/* Map - 3 columns */}
-            <div className="col-span-3 min-h-0">
+          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 min-h-[400px] lg:min-h-0">
+            {/* Map */}
+            <div className="col-span-1 md:col-span-1 lg:col-span-3 min-h-[300px] md:min-h-[400px] lg:min-h-0">
               <POIMap
                 pois={pois}
                 selectedPOI={selectedPOI}
@@ -116,8 +118,8 @@ const Index = () => {
               />
             </div>
 
-            {/* Results Table - 2 columns */}
-            <div className="col-span-2 min-h-0">
+            {/* Results Table */}
+            <div className="col-span-1 md:col-span-1 lg:col-span-2 min-h-[300px] md:min-h-[400px] lg:min-h-0">
               <ResultsTable
                 pois={pois}
                 selectedPOI={selectedPOI}
@@ -125,6 +127,11 @@ const Index = () => {
                 onExportCSV={handleExportCSV}
               />
             </div>
+          </div>
+
+          {/* Logs Panel - Mobile only */}
+          <div className="lg:hidden">
+            <LogsPanel logs={logs} onClearLogs={() => setLogs([])} />
           </div>
         </main>
       </div>
