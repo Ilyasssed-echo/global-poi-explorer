@@ -4,11 +4,12 @@ import { initDuckDB, isInitialized, LogCallback } from "./duckdb";
 const OVERTURE_PATH = "s3://overturemaps-us-west-2/release/2026-01-21.0/theme=places/type=place/*.parquet";
 const GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson";
 
-// Cache for country boundaries (WKT and BBox)
+// Cache for country geometries
 let countriesGeoJSON: any = null;
 
 /**
  * Replicates Python's difflib.SequenceMatcher(None, a, b).ratio()
+ * Ensures exact accuracy with your original Python similarity logic.
  */
 function getSequenceSimilarity(a: string | null | undefined, b: string): number {
   if (!a || !b) return 0;
@@ -46,7 +47,7 @@ async function fetchCountryBoundary(
     return JSON.parse(cached);
   }
 
-  onLog?.(`🗺️ Fetching fresh boundaries from OSM/Natural Earth...`);
+  onLog?.(`🗺️ Resolving boundary for ${countryCode}...`);
   if (!countriesGeoJSON) {
     const response = await fetch(GEOJSON_URL);
     countriesGeoJSON = await response.json();
@@ -97,7 +98,6 @@ async function fetchCountryBoundary(
     wkt: geometryToWKT(feature.geometry),
   };
 
-  // Cache major areas (US, CA, EU codes) to avoid redownloading
   localStorage.setItem(cacheKey, JSON.stringify(result));
   return result;
 }
@@ -142,6 +142,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
     log("📥 STEP 2: CLOUD QUERY (PULLING ALL ATTRIBUTES)");
     const keyword = params.keyword.toLowerCase().replace(/'/g, "''");
 
+    // Explicit selection of all fields requested for CSV
     const sql = `
       SELECT 
         id, names, categories, basic_category, taxonomy, confidence,
@@ -163,28 +164,34 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
 
     log("🧠 STEP 3: APPLYING SEQUENCE MATCHER ACCURACY");
 
-    // Extract unique countries for UI stats
     const countriesFound = new Set<string>();
 
     const filteredPois: POI[] = rows
       .map((row: any) => {
-        // Logic for similarity score across all requested fields
         const nameSim = getSequenceSimilarity(row.names?.primary, params.keyword);
         const catPrimarySim = getSequenceSimilarity(row.categories?.primary, params.keyword);
-        const catAlts = row.categories?.alternate || [];
+
+        // DEFENSIVE CHECKS: Prevent .map is not a function errors
+        const catAlts = Array.isArray(row.categories?.alternate) ? row.categories.alternate : [];
         const catAltSim =
-          catAlts.length > 0 ? Math.max(...catAlts.map((alt: any) => getSequenceSimilarity(alt, params.keyword))) : 0;
-        const taxHier = row.taxonomy?.hierarchy || [];
+          catAlts.length > 0
+            ? Math.max(...catAlts.map((alt: any) => getSequenceSimilarity(String(alt), params.keyword)))
+            : 0;
+
+        const taxHier = Array.isArray(row.taxonomy?.hierarchy) ? row.taxonomy.hierarchy : [];
         const taxHierSim =
-          taxHier.length > 0 ? Math.max(...taxHier.map((h: any) => getSequenceSimilarity(h, params.keyword))) : 0;
+          taxHier.length > 0
+            ? Math.max(...taxHier.map((h: any) => getSequenceSimilarity(String(h), params.keyword)))
+            : 0;
 
         const bestSim = Math.max(nameSim, catPrimarySim, catAltSim, taxHierSim);
 
-        // Track countries for the header counter
-        if (row.addresses && row.addresses[0]?.country) {
+        // Track unique countries
+        if (row.addresses && Array.isArray(row.addresses) && row.addresses[0]?.country) {
           countriesFound.add(row.addresses[0].country);
         }
 
+        // Map back to POI structure while keeping extra fields for CSV
         return {
           ...row,
           names: row.names || { primary: "Unknown" },
@@ -192,6 +199,7 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
           poi_sim_score: bestSim,
           latitude: Number(row.latitude),
           longitude: Number(row.longitude),
+          confidence: Number(row.confidence || 0),
         };
       })
       .filter((poi) => poi.poi_sim_score >= 0.9)
@@ -204,12 +212,13 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
       pois: filteredPois.slice(0, 100),
       total_candidates: rows.length,
       filtered_count: filteredPois.length,
-      uniqueCountryCount: countriesFound.size, // Custom field for Lovable to show in header
+      uniqueCountryCount: countriesFound.size,
       bbox: { xmin: bbox.west, xmax: bbox.east, ymin: bbox.south, ymax: bbox.north },
       logs,
     };
   } catch (error) {
-    log(`❌ Error: ${error instanceof Error ? error.message : "Unknown"}`);
-    return { pois: [], total_candidates: 0, filtered_count: 0, uniqueCountryCount: 0, bbox: null, logs };
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    log(`❌ Error: ${msg}`);
+    throw error;
   }
 }
