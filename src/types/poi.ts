@@ -51,6 +51,7 @@ export interface SearchResponse {
   pois: POI[];
   total_candidates: number;
   filtered_count: number;
+  uniqueCountryCount?: number;
   bbox: { xmin: number; xmax: number; ymin: number; ymax: number } | null;
   logs: string[];
 }
