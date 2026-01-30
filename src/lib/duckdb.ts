@@ -47,7 +47,9 @@ export async function initDuckDB(onLog?: LogCallback): Promise<duckdb.AsyncDuckD
 
     // Configure Database
     onLog?.("🧠 Configuring Memory (2GB Limit)...");
-    await connection.query("SET max_memory='2GB'; SET threads=1;");
+    await connection.query(
+      "SET max_memory='1.5GB'; SET threads=1; SET preserve_insertion_order=false; SET temp_directory='duckdb_temp.tmp';",
+    );
 
     onLog?.("📦 Loading Extensions (Spatial, HTTPFS, JSON)...");
     await connection.query("INSTALL spatial; LOAD spatial;");
