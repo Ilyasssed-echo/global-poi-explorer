@@ -76,11 +76,11 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
         {/* Mode Toggle */}
         <div className="flex flex-col gap-3 p-4 bg-secondary/60 rounded-lg border border-border/50">
           <Label className="text-sm font-medium text-muted-foreground">Search Mode</Label>
-          <div className="flex items-center justify-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <MapPin className={`w-4 h-4 flex-shrink-0 ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`} />
-              <span className={`text-xs font-medium whitespace-nowrap ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`}>
-                Coordinates
+          <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center gap-1">
+              <MapPin className={`w-3 h-3 flex-shrink-0 ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`} />
+              <span className={`text-[10px] font-medium whitespace-nowrap ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                Coords
               </span>
             </div>
             <Switch
@@ -88,11 +88,11 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
               onCheckedChange={(checked) => setMode(checked ? 'country' : 'coordinate')}
               className="flex-shrink-0"
             />
-            <div className="flex items-center gap-1.5">
-              <span className={`text-xs font-medium whitespace-nowrap ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`}>
+            <div className="flex items-center gap-1">
+              <span className={`text-[10px] font-medium whitespace-nowrap ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`}>
                 Country
               </span>
-              <Globe className={`w-4 h-4 flex-shrink-0 ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`} />
+              <Globe className={`w-3 h-3 flex-shrink-0 ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`} />
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground text-center">
