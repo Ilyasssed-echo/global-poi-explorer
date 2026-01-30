@@ -3,7 +3,7 @@ import { SearchPanel } from '@/components/SearchPanel';
 import { POIMap } from '@/components/POIMap';
 import { ResultsTable } from '@/components/ResultsTable';
 import { StatsBar } from '@/components/StatsBar';
-import { LogsPanel } from '@/components/LogsPanel';
+import LogsPanel from '@/components/LogsPanel';
 import { POI, SearchParams } from '@/types/poi';
 import { searchPOIs } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
