@@ -168,12 +168,12 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
       <Button
         onClick={handleSearch}
         disabled={isLoading || !keyword.trim()}
-        className="w-full mt-6 bg-primary hover:bg-primary/90 text-primary-foreground font-medium h-12 glow-effect"
+        className="w-full mt-6 bg-primary hover:bg-primary/90 text-primary-foreground font-medium h-10 text-sm glow-effect"
       >
         {isLoading ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Querying via DuckDB-WASM...
+            Searching...
           </>
         ) : (
           <>
