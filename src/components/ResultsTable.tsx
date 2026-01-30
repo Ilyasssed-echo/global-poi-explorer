@@ -13,14 +13,14 @@ interface ResultsTableProps {
 
 export function ResultsTable({ pois, selectedPOI, onSelectPOI, onExportCSV }: ResultsTableProps) {
   const getScoreColor = (score: number) => {
-    if (score >= 0.95) return 'text-primary';
-    if (score >= 0.90) return 'text-data-success';
+    if (score >= 0.98) return 'text-primary';
+    if (score >= 0.95) return 'text-data-success';
     return 'text-data-warning';
   };
 
   const getScoreBg = (score: number) => {
-    if (score >= 0.95) return 'bg-primary/10';
-    if (score >= 0.90) return 'bg-data-success/10';
+    if (score >= 0.98) return 'bg-primary/10';
+    if (score >= 0.95) return 'bg-data-success/10';
     return 'bg-data-warning/10';
   };
 

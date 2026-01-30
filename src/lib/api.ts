@@ -102,7 +102,6 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
 
     log("📥 STEP 2: CLOUD QUERY (STRICT 0.9 SIMILARITY)");
     const keyword = params.keyword.toLowerCase().replace(/'/g, "''");
-    const displayLimit = params.limit || 50;
 
     const sql = `
       SELECT 
@@ -143,12 +142,12 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
         longitude: Number(row.longitude),
         poi_sim_score: Number(row.poi_sim_score),
       }))
-      .filter((poi) => poi.poi_sim_score >= 0.9);
+      .filter((poi) => poi.poi_sim_score >= 0.95);
 
-    log(`✅ Found ${allPois.length} high-confidence matches.`);
+    log(`✅ Found ${allPois.length} high-confidence matches (≥95% similarity).`);
 
     return {
-      pois: allPois.slice(0, displayLimit),
+      pois: allPois,
       total_candidates: rows.length,
       filtered_count: allPois.length,
       bbox: { xmin: bbox.west, xmax: bbox.east, ymin: bbox.south, ymax: bbox.north },

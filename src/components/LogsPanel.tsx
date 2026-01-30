@@ -54,7 +54,7 @@ export function LogsPanel({ logs, onClearLogs }: LogsPanelProps) {
           ref={scrollRef}
           className="h-[400px] overflow-y-auto px-4 py-3"
         >
-          <div className="font-mono text-xs space-y-1">
+          <div className="font-mono text-xs space-y-1 pb-8">
             {logs.map((log, index) => (
               <div
                 key={index}

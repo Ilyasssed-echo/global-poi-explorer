@@ -8,7 +8,7 @@ import { POI, SearchParams } from '@/types/poi';
 import { searchPOIs } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
-const MAX_POIS_DISPLAYED = 100;
+// No limit - show all high-confidence matches
 
 const Index = () => {
   const [pois, setPois] = useState<POI[]>([]);
@@ -31,10 +31,7 @@ const Index = () => {
     lastSearchParams.current = params;
     
     try {
-      const response = await searchPOIs({
-        ...params,
-        limit: MAX_POIS_DISPLAYED,
-      });
+      const response = await searchPOIs(params);
       
       const endTime = Date.now();
       setSearchTime(endTime - startTime);
