@@ -74,26 +74,33 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
         </div>
 
         {/* Mode Toggle */}
-        <div className="space-y-3">
-          <Label className="text-sm font-medium text-muted-foreground">Location Mode</Label>
-          <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-muted-foreground" />
-              <span className={`text-sm ${mode === 'coordinate' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                Coordinates
-              </span>
-            </div>
-            <Switch
-              checked={mode === 'country'}
-              onCheckedChange={(checked) => setMode(checked ? 'country' : 'coordinate')}
-            />
-            <div className="flex items-center gap-2">
-              <span className={`text-sm ${mode === 'country' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                Country
-              </span>
-              <Globe className="w-4 h-4 text-muted-foreground" />
+        <div className="flex flex-col gap-2 p-4 bg-secondary/60 rounded-lg border border-border/50">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium text-muted-foreground">Search Mode</Label>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <MapPin className={`w-4 h-4 ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`} />
+                <span className={`text-sm font-medium ${mode === 'coordinate' ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                  Coordinates
+                </span>
+              </div>
+              <Switch
+                checked={mode === 'country'}
+                onCheckedChange={(checked) => setMode(checked ? 'country' : 'coordinate')}
+              />
+              <div className="flex items-center gap-1.5">
+                <span className={`text-sm font-medium ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`}>
+                  Country
+                </span>
+                <Globe className={`w-4 h-4 ${mode === 'country' ? 'text-blue-400' : 'text-muted-foreground'}`} />
+              </div>
             </div>
           </div>
+          <p className="text-[10px] text-muted-foreground">
+            {mode === 'coordinate' 
+              ? 'Search within a radius around specific lat/lng coordinates' 
+              : 'Search across an entire country using ISO country code'}
+          </p>
         </div>
 
         {/* Conditional Inputs */}
