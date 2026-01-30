@@ -136,7 +136,7 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
     };
   }, [tileConfig, onBoundsChange]);
 
-  // Draw bounding box when result bbox changes
+  // Draw bounding box and fit map when result bbox changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -153,12 +153,17 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
         [resultBbox.ymax, resultBbox.xmax]
       );
       
+      // Draw the bounding box rectangle
       bboxLayerRef.current = L.rectangle(bounds, {
         color: '#22d3ee',
         weight: 2,
         fillOpacity: 0.05,
         dashArray: '5, 5',
       }).addTo(map);
+
+      // Fit map to the bounding box
+      isProgrammaticMoveRef.current = true;
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
     }
   }, [resultBbox]);
 
@@ -235,13 +240,7 @@ export function POIMap({ pois, onSelectPOI, onBoundsChange, resultBbox }: POIMap
       marker.addTo(markersLayer);
     }
 
-    // Only fit bounds on initial search (not on viewport re-queries)
-    if (isInitialFitRef.current && pois.length > 0) {
-      isProgrammaticMoveRef.current = true;
-      const bounds = L.latLngBounds(pois.map((p) => [p.latitude, p.longitude] as [number, number]));
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
-      isInitialFitRef.current = false;
-    }
+    // Map fitting is now handled by resultBbox effect
   }, [pois, onSelectPOI]);
 
   return (
