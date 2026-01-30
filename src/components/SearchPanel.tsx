@@ -138,8 +138,8 @@ export function SearchPanel({ onSearch, isLoading }: SearchPanelProps) {
                 value={[radius]}
                 onValueChange={([value]) => setRadius(value)}
                 min={1}
-                max={50}
-                step={1}
+                max={1000}
+                step={5}
                 className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary"
               />
             </div>
