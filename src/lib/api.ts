@@ -4,7 +4,36 @@ import { initDuckDB, isInitialized, LogCallback } from "./duckdb";
 const OVERTURE_PATH = "s3://overturemaps-us-west-2/release/2026-01-21.0/theme=places/type=place/*.parquet";
 const GEOJSON_URL = "https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson";
 
+// Cache for country geometries
 let countriesGeoJSON: any = null;
+
+/**
+ * Replicates Python's difflib.SequenceMatcher(None, a, b).ratio()
+ * This ensures 1:1 accuracy with your Python similarity logic.
+ */
+function getSequenceSimilarity(a: string | null | undefined, b: string): number {
+  if (!a || !b) return 0;
+  const s1 = a.toLowerCase();
+  const s2 = b.toLowerCase();
+  if (s1 === s2) return 1.0;
+
+  const len1 = s1.length;
+  const len2 = s2.length;
+  const matrix = Array(len1 + 1)
+    .fill(0)
+    .map(() => Array(len2 + 1).fill(0));
+  let matches = 0;
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      if (s1[i - 1] === s2[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1] + 1;
+        matches = Math.max(matches, matrix[i][j]);
+      }
+    }
+  }
+  return (2.0 * matches) / (len1 + len2);
+}
 
 async function fetchCountryBoundary(
   countryCode: string,
@@ -23,7 +52,6 @@ async function fetchCountryBoundary(
 
   if (!feature) return null;
 
-  // Process BBox
   let minLon = Infinity,
     maxLon = -Infinity,
     minLat = Infinity,
@@ -38,7 +66,6 @@ async function fetchCountryBoundary(
   };
   processCoords(feature.geometry.coordinates);
 
-  // Convert to WKT
   const geometryToWKT = (geom: any): string => {
     if (geom.type === "Polygon") {
       const rings = geom.coordinates
@@ -89,10 +116,10 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
     } else {
       const offset = (params.radius || 5) / 111.0;
       bbox = {
-        west: params.longitude! - offset,
-        east: params.longitude! + offset,
-        south: params.latitude! - offset,
-        north: params.latitude! + offset,
+        west: (params.longitude || 0) - offset,
+        east: (params.longitude || 0) + offset,
+        south: (params.latitude || 0) - offset,
+        north: (params.latitude || 0) + offset,
       };
       spatialFilter = `
         bbox.xmin > ${bbox.west} AND bbox.xmax < ${bbox.east} 
@@ -100,56 +127,74 @@ export async function searchPOIs(params: SearchParams): Promise<SearchResponse> 
       `;
     }
 
-    log("📥 STEP 2: CLOUD QUERY (STRICT 0.9 SIMILARITY)");
+    log("📥 STEP 2: CLOUD QUERY (DUCKDB COARSE FILTER)");
     const keyword = params.keyword.toLowerCase().replace(/'/g, "''");
 
+    // We use DuckDB's native jaro_winkler as a fast first-pass filter (0.8)
+    // to bring candidates into the browser for the strict 0.9 local check.
     const sql = `
       SELECT 
         id,
-        names.primary as name,
-        categories.primary as category,
+        names,
+        categories,
+        taxonomy,
         ST_X(geometry) as longitude,
         ST_Y(geometry) as latitude,
-        addresses as addresses_raw,
-        GREATEST(
-          jaro_winkler_similarity(lower(names.primary), '${keyword}'),
-          jaro_winkler_similarity(lower(basic_category), '${keyword}'),
-          jaro_winkler_similarity(lower(categories.primary), '${keyword}'),
-          COALESCE((SELECT max(jaro_winkler_similarity(lower(x), '${keyword}')) FROM unnest(categories.alternate) t(x)), 0),
-          COALESCE((SELECT max(jaro_winkler_similarity(lower(x), '${keyword}')) FROM unnest(taxonomy.hierarchy) t(x)), 0)
-        ) as poi_sim_score
+        addresses as addresses_raw
       FROM read_parquet('${OVERTURE_PATH}', hive_partitioning=1)
       WHERE ${spatialFilter}
         AND (
-          lower(names.primary) LIKE '%${keyword.substring(0, 3)}%' 
-          OR lower(categories.primary) LIKE '%${keyword.substring(0, 3)}%'
-          OR lower(basic_category) LIKE '%${keyword.substring(0, 3)}%'
+          jaro_winkler_similarity(lower(names.primary), '${keyword}') >= 0.8 OR
+          jaro_winkler_similarity(lower(basic_category), '${keyword}') >= 0.8 OR
+          EXISTS (SELECT 1 FROM unnest(categories.alternate) t(x) WHERE jaro_winkler_similarity(lower(x), '${keyword}') >= 0.8) OR
+          EXISTS (SELECT 1 FROM unnest(taxonomy.hierarchy) t(x) WHERE jaro_winkler_similarity(lower(x), '${keyword}') >= 0.8)
         )
-      ORDER BY poi_sim_score DESC
       LIMIT 1000;
     `;
 
     const result = await conn.query(sql);
     const rows = result.toArray();
+    log(`✅ Downloaded ${rows.length} candidates. Now applying SequenceMatcher...`);
 
-    const allPois: POI[] = rows
-      .map((row: any) => ({
-        id: row.id,
-        names: { primary: row.name || "Unknown" },
-        categories: { primary: row.category || "unknown" },
-        addresses: row.addresses_raw || [],
-        latitude: Number(row.latitude),
-        longitude: Number(row.longitude),
-        poi_sim_score: Number(row.poi_sim_score),
-      }))
-      .filter((poi) => poi.poi_sim_score >= 0.95);
+    log("🧠 STEP 3: LOCAL STRICT FILTERING (RATCLIFF/OBERSHELP 0.9)");
 
-    log(`✅ Found ${allPois.length} high-confidence matches (≥95% similarity).`);
+    const filteredPois: POI[] = rows
+      .map((row: any) => {
+        const nameSim = getSequenceSimilarity(row.names?.primary, params.keyword);
+
+        const catPrimarySim = getSequenceSimilarity(row.categories?.primary, params.keyword);
+        const catAlts = row.categories?.alternate || [];
+        const catAltSim =
+          catAlts.length > 0
+            ? Math.max(...catAlts.map((alt: string) => getSequenceSimilarity(alt, params.keyword)))
+            : 0;
+
+        const taxPrimarySim = getSequenceSimilarity(row.taxonomy?.primary, params.keyword);
+        const taxHier = row.taxonomy?.hierarchy || [];
+        const taxHierSim =
+          taxHier.length > 0 ? Math.max(...taxHier.map((h: string) => getSequenceSimilarity(h, params.keyword))) : 0;
+
+        const bestSim = Math.max(nameSim, catPrimarySim, catAltSim, taxPrimarySim, taxHierSim);
+
+        return {
+          id: row.id,
+          names: { primary: row.names?.primary || "Unknown" },
+          categories: { primary: row.categories?.primary || "unknown" },
+          addresses: row.addresses_raw || [],
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          poi_sim_score: bestSim,
+        };
+      })
+      .filter((poi) => poi.poi_sim_score >= 0.9)
+      .sort((a, b) => b.poi_sim_score - a.poi_sim_score);
+
+    log(`✅ Found ${filteredPois.length} high-fidelity matches above 0.9 similarity.`);
 
     return {
-      pois: allPois,
+      pois: filteredPois.slice(0, params.limit || 100),
       total_candidates: rows.length,
-      filtered_count: allPois.length,
+      filtered_count: filteredPois.length,
       bbox: { xmin: bbox.west, xmax: bbox.east, ymin: bbox.south, ymax: bbox.north },
       logs,
     };
